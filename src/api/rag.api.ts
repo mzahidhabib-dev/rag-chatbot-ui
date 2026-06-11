@@ -25,6 +25,13 @@ export interface ChatMessage {
 
 export const ragApi = {
   /**
+   * Sets the active client ID for multi-tenancy requests
+   */
+  setClientId: (clientId: string) => {
+    api.defaults.headers.common['x-client-id'] = clientId;
+  },
+
+  /**
    * Uploads a document (PDF/DOCX) to the server
    */
   uploadDocument: async (file: File, onUploadProgress?: (progressEvent: any) => void) => {
@@ -66,6 +73,14 @@ export const ragApi = {
    */
   getChatHistory: async (sessionId: string): Promise<ChatMessage[]> => {
     const response = await api.get(`/chat/${sessionId}`);
+    return response.data;
+  },
+
+  /**
+   * Retrieves global analytics for the Admin Dashboard
+   */
+  getAdminStats: async (): Promise<any> => {
+    const response = await api.get('/admin/stats');
     return response.data;
   },
 };

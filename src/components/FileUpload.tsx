@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { UploadCloud, File, X, Loader2 } from 'lucide-react';
+import { UploadCloud, Loader2 } from 'lucide-react';
 import { cn } from '../utils/cn';
 
 interface FileUploadProps {
@@ -77,7 +77,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onUpload, isUploading, u
           </div>
           <h3 className="text-sm font-semibold text-text mb-1">Upload a document</h3>
           <p className="text-xs text-textSecondary max-w-xs">
-            Drag and drop your PDF or DOCX file here, or click to browse. Maximum size 10MB.
+            Drag and drop your PDF or DOCX file here, or click to browse. Maximum size 2MB.
           </p>
         </div>
       )}

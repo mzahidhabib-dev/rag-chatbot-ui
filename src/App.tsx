@@ -2,14 +2,21 @@ import React, { useState, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { FileUpload } from './components/FileUpload';
 import { ChatInterface } from './components/ChatInterface';
+import { AdminDashboard } from './components/AdminDashboard';
 import { ragApi, type DocumentDto, type ChatMessage } from './api/rag.api';
-import { BotMessageSquare } from 'lucide-react';
+import { BotMessageSquare, ShieldAlert } from 'lucide-react';
 
 // Simple session ID generation for the MVP
 const SESSION_ID = localStorage.getItem('rag_session_id') || crypto.randomUUID();
 localStorage.setItem('rag_session_id', SESSION_ID);
 
+const TENANT_OPTIONS = [
+  { id: 'tenant-a', name: 'Acme Corp (Tenant A)' },
+  { id: 'tenant-b', name: 'Globex (Tenant B)' },
+];
+
 function App() {
+  const [clientId, setClientId] = useState(() => localStorage.getItem('rag_client_id') || 'tenant-a');
   const [documents, setDocuments] = useState<DocumentDto[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   
@@ -17,6 +24,8 @@ function App() {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isChatLoading, setIsChatLoading] = useState(false);
+  
+  const [view, setView] = useState<'chat' | 'admin'>('chat');
 
   const fetchDocuments = async () => {
     try {
@@ -41,9 +50,20 @@ function App() {
   };
 
   useEffect(() => {
+    // 1. Update API headers and save to local storage
+    ragApi.setClientId(clientId);
+    localStorage.setItem('rag_client_id', clientId);
+    
+    // 2. Clear old tenant data while loading
+    setDocuments([]);
+    setMessages([]);
+    setIsDocsLoading(true);
+
+    // 3. Fetch new tenant data
     fetchDocuments();
     fetchHistory();
-    // Start polling docs status every 5s if there are processing docs
+    
+    // 4. Start polling docs status every 5s if there are processing docs
     const interval = setInterval(() => {
       setDocuments(current => {
         if (current.some(d => d.status === 'processing')) {
@@ -52,8 +72,9 @@ function App() {
         return current;
       });
     }, 5000);
+    
     return () => clearInterval(interval);
-  }, []);
+  }, [clientId]);
 
   const handleUpload = async (file: File) => {
     setIsUploading(true);
@@ -119,7 +140,7 @@ function App() {
       />
       
       <main className="flex-1 flex flex-col h-full relative min-w-0">
-        <header className="h-16 flex items-center px-6 border-b border-border bg-surface/50 backdrop-blur shrink-0">
+        <header className="h-16 flex items-center justify-between px-6 border-b border-border bg-surface/50 backdrop-blur shrink-0">
           <div className="flex items-center gap-2">
             <div className="bg-primary/20 p-1.5 rounded-lg">
               <BotMessageSquare className="w-5 h-5 text-primary" />
@@ -128,34 +149,65 @@ function App() {
               Synapse RAG Assistant
             </h1>
           </div>
+          
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setView(view === 'chat' ? 'admin' : 'chat')}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                view === 'admin' 
+                  ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
+                  : 'text-textSecondary hover:bg-surface hover:text-text'
+              }`}
+            >
+              <ShieldAlert size={16} />
+              {view === 'admin' ? 'Exit Admin' : 'Admin'}
+            </button>
+            <div className="w-px h-6 bg-border mx-1"></div>
+            <span className="text-xs text-textSecondary uppercase tracking-wider font-semibold">Active Tenant:</span>
+            <select 
+              value={clientId}
+              onChange={(e) => setClientId(e.target.value)}
+              className="bg-background border border-border text-sm text-text rounded-md px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary"
+            >
+              {TENANT_OPTIONS.map(t => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </select>
+          </div>
         </header>
 
-        <div className="flex-1 flex overflow-hidden">
-          {/* Main Chat Area */}
-          <div className="flex-1 flex flex-col h-full border-r border-border min-w-0 bg-background">
-            <ChatInterface 
-              messages={messages} 
-              onSendMessage={handleSendMessage} 
-              isLoading={isChatLoading} 
-              disabled={!hasReadyDocuments}
-            />
+        {view === 'admin' ? (
+          <div className="flex-1 overflow-hidden">
+            <AdminDashboard />
           </div>
-
-          {/* Right Panel for Upload */}
-          <div className="w-80 shrink-0 bg-surface/30 p-6 overflow-y-auto">
-            <div className="mb-6">
-              <h2 className="text-sm font-semibold text-text uppercase tracking-wider mb-2">Knowledge Ingestion</h2>
-              <p className="text-xs text-textSecondary">
-                Upload documents to teach the AI new information. It will instantly become searchable.
-              </p>
+        ) : (
+          <div className="flex-1 flex overflow-hidden">
+            {/* Main Chat Area */}
+            <div className="flex-1 flex flex-col h-full border-r border-border min-w-0 bg-background">
+              <ChatInterface 
+                messages={messages} 
+                onSendMessage={handleSendMessage} 
+                isLoading={isChatLoading} 
+                disabled={!hasReadyDocuments}
+              />
             </div>
-            <FileUpload 
-              onUpload={handleUpload} 
-              isUploading={isUploading} 
-              uploadProgress={uploadProgress} 
-            />
+
+            {/* Right Panel for Upload */}
+            <div className="w-80 shrink-0 bg-surface/30 p-6 overflow-y-auto">
+              <div className="mb-6">
+                <h2 className="text-sm font-semibold text-text uppercase tracking-wider mb-2">Knowledge Ingestion</h2>
+                <p className="text-xs text-textSecondary">
+                  Upload documents to teach the AI new information. It will instantly become searchable.
+                </p>
+              </div>
+              <FileUpload 
+                onUpload={handleUpload} 
+                isUploading={isUploading} 
+                uploadProgress={uploadProgress} 
+              />
+            </div>
           </div>
-        </div>
+        )}
       </main>
     </div>
   );
