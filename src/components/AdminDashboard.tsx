@@ -77,6 +77,56 @@ export const AdminDashboard: React.FC = () => {
               <h3 className="text-2xl font-bold">{stats.totalSessions}</h3>
             </div>
           </div>
+
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 flex items-center space-x-4">
+            <div className="p-4 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-xl">
+              <Database size={28} />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-gray-500">Blocked Requests</p>
+              <h3 className="text-2xl font-bold">{stats.blockedRequests}</h3>
+            </div>
+          </div>
+        </div>
+
+        {/* Security Audit Logs */}
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden mb-8">
+          <div className="p-6 border-b border-gray-100 dark:border-gray-700">
+            <h2 className="text-xl font-semibold flex items-center gap-2">
+              <Server size={20} className="text-gray-400" /> 
+              Recent Security Audit Logs
+            </h2>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm text-gray-600 dark:text-gray-300">
+              <thead className="text-xs uppercase bg-gray-50 dark:bg-gray-700/50 text-gray-500 dark:text-gray-400">
+                <tr>
+                  <th className="px-6 py-4 font-medium">Timestamp</th>
+                  <th className="px-6 py-4 font-medium">Tenant ID</th>
+                  <th className="px-6 py-4 font-medium">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {stats.recentAudits?.length === 0 ? (
+                  <tr>
+                    <td colSpan={3} className="px-6 py-8 text-center text-gray-500">No audit logs found.</td>
+                  </tr>
+                ) : (
+                  stats.recentAudits?.map((log: any) => (
+                    <tr key={log.id} className="border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/20">
+                      <td className="px-6 py-4">{new Date(log.createdAt).toLocaleString()}</td>
+                      <td className="px-6 py-4 font-medium text-gray-900 dark:text-white">{log.clientId}</td>
+                      <td className="px-6 py-4">
+                        <span className="font-mono text-xs bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">
+                          {log.action}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
 
         {/* Tenant Breakdown */}

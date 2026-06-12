@@ -1,7 +1,7 @@
 import React from 'react';
 import { FileText, Trash2, Loader2, Database } from 'lucide-react';
 import { type DocumentDto } from '../api/rag.api';
-import { cn } from '../utils/cn';
+
 
 interface SidebarProps {
   documents: DocumentDto[];
