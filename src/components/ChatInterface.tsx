@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User, Loader2, Info } from 'lucide-react';
+import { Send, Bot, User, Loader2, Info, BookOpen } from 'lucide-react';
 import { type ChatMessage } from '../api/rag.api';
 import { cn } from '../utils/cn';
 
@@ -10,9 +10,32 @@ interface ChatInterfaceProps {
   disabled: boolean;
 }
 
-export const ChatInterface: React.FC<ChatInterfaceProps> = ({ 
-  messages, 
-  onSendMessage, 
+/**
+ * Parses [Source: filename.pdf, Page X] citations from assistant text
+ * and renders them as styled badge chips below the message bubble.
+ */
+function parseSources(content: string): { text: string; sources: { filename: string; page: string }[] } {
+  const sourceRegex = /\[Source:\s*([^,\]]+),\s*Page\s*([^\]]+)\]/gi;
+  const sources: { filename: string; page: string }[] = [];
+  let match;
+
+  while ((match = sourceRegex.exec(content)) !== null) {
+    const filename = match[1].trim();
+    const page = match[2].trim();
+    // Deduplicate
+    if (!sources.some(s => s.filename === filename && s.page === page)) {
+      sources.push({ filename, page });
+    }
+  }
+
+  // Remove citation markers from the displayed text
+  const text = content.replace(sourceRegex, '').replace(/\n{3,}/g, '\n\n').trim();
+  return { text, sources };
+}
+
+export const ChatInterface: React.FC<ChatInterfaceProps> = ({
+  messages,
+  onSendMessage,
   isLoading,
   disabled
 }) => {
@@ -30,7 +53,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isLoading || disabled) return;
-    
     const query = input;
     setInput('');
     await onSendMessage(query);
@@ -57,44 +79,67 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             <p className="text-sm text-textSecondary mt-1">Ask any question based on your uploaded documents.</p>
           </div>
         ) : (
-          messages.map((msg, idx) => (
-            <div 
-              key={idx} 
-              className={cn(
-                "flex gap-4 max-w-3xl",
-                msg.role === 'user' ? "ml-auto flex-row-reverse" : "mr-auto"
-              )}
-            >
-              <div className={cn(
-                "w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 mt-1",
-                msg.role === 'user' ? "bg-primary text-white" : "bg-surface border border-border text-primary"
-              )}>
-                {msg.role === 'user' ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
+          messages.map((msg, idx) => {
+            const isAssistant = msg.role === 'assistant';
+            const { text, sources } = isAssistant ? parseSources(msg.content) : { text: msg.content, sources: [] };
+
+            return (
+              <div
+                key={idx}
+                className={cn(
+                  'flex gap-3 max-w-3xl',
+                  msg.role === 'user' ? 'ml-auto flex-row-reverse' : 'mr-auto'
+                )}
+              >
+                {/* Avatar */}
+                <div className={cn(
+                  'w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 mt-1',
+                  msg.role === 'user'
+                    ? 'bg-primary text-white'
+                    : 'bg-surface border border-border text-primary'
+                )}>
+                  {msg.role === 'user' ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
+                </div>
+
+                {/* Bubble + Citations */}
+                <div className="flex flex-col gap-2">
+                  <div className={cn(
+                    'px-4 py-3 rounded-2xl whitespace-pre-wrap leading-relaxed shadow-sm',
+                    msg.role === 'user'
+                      ? 'bg-primary text-white rounded-tr-none'
+                      : 'bg-surface border border-border text-text rounded-tl-none'
+                  )}>
+                    {text ? text : (isAssistant && isLoading && idx === messages.length - 1 ? (
+                      <div className="flex items-center gap-1.5 h-5 px-1">
+                        <span className="w-2 h-2 rounded-full bg-primary/60 animate-bounce" style={{ animationDelay: '0ms' }} />
+                        <span className="w-2 h-2 rounded-full bg-primary/60 animate-bounce" style={{ animationDelay: '150ms' }} />
+                        <span className="w-2 h-2 rounded-full bg-primary/60 animate-bounce" style={{ animationDelay: '300ms' }} />
+                      </div>
+                    ) : text)}
+                  </div>
+
+                  {/* Source Citation Badges */}
+                  {sources.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 pl-1">
+                      {sources.map((src, i) => (
+                        <span
+                          key={i}
+                          className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20"
+                          title={`${src.filename}, Page ${src.page}`}
+                        >
+                          <BookOpen className="w-2.5 h-2.5" />
+                          {src.filename.length > 20 ? src.filename.slice(0, 18) + '…' : src.filename}
+                          {src.page !== '?' && ` · p.${src.page}`}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
-              <div className={cn(
-                "px-4 py-3 rounded-2xl whitespace-pre-wrap leading-relaxed shadow-sm",
-                msg.role === 'user' 
-                  ? "bg-primary text-white rounded-tr-none" 
-                  : "bg-surface border border-border text-text rounded-tl-none"
-              )}>
-                {msg.content}
-              </div>
-            </div>
-          ))
+            );
+          })
         )}
-        
-        {isLoading && (
-          <div className="flex gap-4 max-w-3xl mr-auto">
-            <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 mt-1 bg-surface border border-border text-primary">
-              <Bot className="w-4 h-4" />
-            </div>
-            <div className="px-5 py-4 rounded-2xl bg-surface border border-border rounded-tl-none flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-primary/60 animate-bounce" style={{ animationDelay: '0ms' }} />
-              <span className="w-2 h-2 rounded-full bg-primary/60 animate-bounce" style={{ animationDelay: '150ms' }} />
-              <span className="w-2 h-2 rounded-full bg-primary/60 animate-bounce" style={{ animationDelay: '300ms' }} />
-            </div>
-          </div>
-        )}
+
         <div ref={messagesEndRef} />
       </div>
 
@@ -106,10 +151,10 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             value={input}
             onChange={(e) => setInput(e.target.value)}
             disabled={disabled || isLoading}
-            placeholder="Ask a question about your documents..."
+            placeholder="Ask a question about your documents…"
             className="w-full bg-surface border border-border rounded-full pl-5 pr-14 py-3.5 focus:outline-none focus:ring-2 focus:ring-primary/50 text-text placeholder-textSecondary disabled:opacity-50 transition-all shadow-sm"
           />
-          <button 
+          <button
             type="submit"
             disabled={!input.trim() || disabled || isLoading}
             className="absolute right-2 top-2 p-2 rounded-full bg-primary text-white disabled:bg-surface disabled:text-textSecondary hover:bg-primaryHover transition-colors flex items-center justify-center"

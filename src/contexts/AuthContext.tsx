@@ -1,11 +1,11 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { ragApi } from '../api/rag.api';
 
 interface User {
   userId: string;
   tenantId: string;
   tenantName: string;
   email: string;
+  role?: string;
 }
 
 interface AuthContextType {
@@ -34,7 +34,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           tenantName: payload.tenantName || 'Workspace',
           email: payload.email,
         });
-        ragApi.setAuthToken(token);
         localStorage.setItem('rag_jwt', token);
       } catch (e) {
         console.error('Failed to parse JWT', e);
@@ -42,7 +41,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     } else {
       setUser(null);
-      ragApi.setAuthToken(null);
       localStorage.removeItem('rag_jwt');
     }
   }, [token]);

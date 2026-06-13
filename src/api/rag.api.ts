@@ -5,6 +5,29 @@ export const api = axios.create({
   baseURL: '/api',
 });
 
+// Add a request interceptor to dynamically attach the JWT token
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('rag_jwt');
+  if (token) {
+    config.headers.set('Authorization', `Bearer ${token}`);
+  }
+  return config;
+}, (error) => {
+  return Promise.reject(error);
+});
+
+// Add a response interceptor to catch expired tokens
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('rag_jwt');
+      window.location.href = '/login';
+    }
+    return Promise.reject(error);
+  }
+);
+
 export interface DocumentDto {
   id: string;
   filename: string;
@@ -23,6 +46,13 @@ export interface ChatMessage {
   content: string;
 }
 
+export interface SessionDto {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export const authApi = {
   login: async (credentials: any) => {
     const response = await api.post('/auth/login', credentials);
@@ -35,20 +65,8 @@ export const authApi = {
 };
 
 export const ragApi = {
-  /**
-   * Sets the JWT access token for authentication
-   */
-  setAuthToken: (token: string | null) => {
-    if (token) {
-      api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-    } else {
-      delete api.defaults.headers.common['Authorization'];
-    }
-  },
+  // ─── Documents ────────────────────────────────────────────────────────────
 
-  /**
-   * Uploads a document (PDF/DOCX) to the server
-   */
   uploadDocument: async (file: File, onUploadProgress?: (progressEvent: any) => void) => {
     const formData = new FormData();
     formData.append('file', file);
@@ -59,45 +77,61 @@ export const ragApi = {
     return response.data;
   },
 
-  /**
-   * Retrieves all uploaded documents
-   */
   getDocuments: async (): Promise<DocumentDto[]> => {
     const response = await api.get('/rag/documents');
     return response.data;
   },
 
-  /**
-   * Deletes a document by ID
-   */
   deleteDocument: async (id: string) => {
     const response = await api.delete(`/rag/documents/${id}`);
     return response.data;
   },
 
+  // ─── Sessions ─────────────────────────────────────────────────────────────
+
   /**
-   * Sends a query to the chat service (legacy JSON endpoint)
+   * Creates a new empty chat session. Returns the new sessionId.
    */
-  chat: async (query: string, sessionId: string): Promise<ChatResponse> => {
-    const response = await api.post('/rag/chat', { query, sessionId });
+  createSession: async (): Promise<{ id: string; title: string }> => {
+    const response = await api.post('/rag/sessions');
     return response.data;
   },
 
   /**
-   * Sends a query and streams the response via Server-Sent Events
+   * Lists all sessions for the current user, newest first.
+   */
+  listSessions: async (): Promise<SessionDto[]> => {
+    const response = await api.get('/rag/sessions');
+    return response.data;
+  },
+
+  /**
+   * Deletes a session and all its messages.
+   */
+  deleteSession: async (id: string) => {
+    const response = await api.delete(`/rag/sessions/${id}`);
+    return response.data;
+  },
+
+  // ─── Chat ─────────────────────────────────────────────────────────────────
+
+  /**
+   * Sends a query and streams the response via Server-Sent Events.
+   * NestJS @Sse() wraps each event as { data: yourPayload }, so we unwrap it.
    */
   chatStream: async (
-    query: string, 
+    query: string,
     sessionId: string,
     onChunk: (text: string) => void,
     onMetadata: (metadata: any) => void
   ): Promise<void> => {
-    const token = api.defaults.headers.common['Authorization'] as string;
+    const token = localStorage.getItem('rag_jwt');
     const response = await fetch('/api/rag/chat', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { 'Authorization': token } : {}),
+        'Accept': 'text/event-stream',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
       },
       body: JSON.stringify({ query, sessionId }),
     });
@@ -110,23 +144,38 @@ export const ragApi = {
 
     while (true) {
       const { done, value } = await reader.read();
-      if (done) break;
 
-      buffer += decoder.decode(value, { stream: true });
+      if (value) {
+        const decoded = decoder.decode(value, { stream: !done });
+        console.log('SSE Raw Value:', decoded);
+        buffer += decoded;
+      }
+
       const parts = buffer.split('\n\n');
-      buffer = parts.pop() || ''; // keep the incomplete part in the buffer
+      // If not done, pop the last incomplete part back into the buffer
+      buffer = done ? '' : (parts.pop() || '');
 
       for (const part of parts) {
-        if (part.startsWith('data: ')) {
+        if (!part.trim()) continue;
+
+        const lines = part.split('\n');
+        const dataLine = lines.find(line => line.startsWith('data: '));
+
+        if (dataLine) {
           try {
-            const dataStr = part.replace('data: ', '').trim();
+            const dataStr = dataLine.slice('data: '.length).trim();
             if (dataStr === '[DONE]') return;
-            
-            const event = JSON.parse(dataStr);
-            if (event.type === 'metadata') {
+
+            const envelope = JSON.parse(dataStr);
+            console.log('SSE Parsed Event:', envelope);
+
+            // NestJS @Sse() wraps every emission as { data: <yourPayload> }
+            const event = envelope.data ?? envelope;
+
+            if (event.type === 'metadata' || event.type === 'tool') {
               onMetadata(event);
             } else if (event.type === 'chunk') {
-              onChunk(event.text);
+              onChunk(event.text ?? '');
             } else if (event.type === 'done') {
               return;
             }
@@ -135,28 +184,26 @@ export const ragApi = {
           }
         }
       }
+
+      if (done) break;
     }
   },
 
   /**
-   * Retrieves the conversation history for a session
+   * Retrieves the conversation history for a session.
    */
   getChatHistory: async (sessionId: string): Promise<ChatMessage[]> => {
     const response = await api.get(`/rag/chat/${sessionId}`);
     return response.data;
   },
 
-  /**
-   * Retrieves global analytics for the Admin Dashboard
-   */
+  // ─── Admin / Client Stats ─────────────────────────────────────────────────
+
   getAdminStats: async (): Promise<any> => {
     const response = await api.get('/rag/admin/stats');
     return response.data;
   },
 
-  /**
-   * Retrieves tenant-specific analytics for the Client Dashboard
-   */
   getClientStats: async (): Promise<any> => {
     const response = await api.get('/rag/client/stats');
     return response.data;
